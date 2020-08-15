@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/helper/structure"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/structure"
 	"github.com/olivere/elastic/uritemplates"
 
 	elastic7 "github.com/olivere/elastic/v7"
@@ -52,7 +52,7 @@ func resourceElasticsearchOpenDistroISMPolicy() *schema.Resource {
 			},
 		},
 		Importer: &schema.ResourceImporter{
-			State: schema.ImportStatePassthrough,
+			StateContext: schema.ImportStatePassthroughContext,
 		},
 	}
 }
@@ -127,8 +127,8 @@ func resourceElasticsearchOpenDistroISMPolicyDelete(d *schema.ResourceData, m in
 	switch client := esClient.(type) {
 	case *elastic7.Client:
 		_, err = client.PerformRequest(context.TODO(), elastic7.PerformRequestOptions{
-			Method: "DELETE",
-			Path:   path,
+			Method:           "DELETE",
+			Path:             path,
 			RetryStatusCodes: []int{http.StatusConflict},
 			Retrier: elastic7.NewBackoffRetrier(
 				elastic7.NewExponentialBackoff(100*time.Millisecond, 30*time.Second),

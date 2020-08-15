@@ -8,8 +8,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/olivere/elastic/uritemplates"
 
 	elastic7 "github.com/olivere/elastic/v7"
@@ -59,7 +59,7 @@ func resourceElasticsearchOpenDistroISMPolicyMapping() *schema.Resource {
 			},
 		},
 		Importer: &schema.ResourceImporter{
-			State: schema.ImportStatePassthrough,
+			StateContext: schema.ImportStatePassthroughContext,
 		},
 		Timeouts: &schema.ResourceTimeout{
 			Create: schema.DefaultTimeout(5 * time.Minute),
@@ -79,7 +79,7 @@ func resourceElasticsearchOpenDistroISMPolicyMappingCreate(d *schema.ResourceDat
 	indexPattern := d.Get("indexes").(string)
 	policyID := d.Get("policy_id").(string)
 
-	return resource.Retry(d.Timeout(schema.TimeoutCreate), resourceElasticsearchOpenDistroISMPolicyMappingRetry(indexPattern, policyID, d, m))
+	return resource.RetryContext(context.TODO(), d.Timeout(schema.TimeoutCreate), resourceElasticsearchOpenDistroISMPolicyMappingRetry(indexPattern, policyID, d, m))
 }
 
 // From https://opendistro.github.io/for-elasticsearch-docs/docs/im/ism/api/#update-managed-index-policy
@@ -165,7 +165,7 @@ func resourceElasticsearchOpenDistroISMPolicyMappingUpdate(d *schema.ResourceDat
 	indexPattern := d.Get("indexes").(string)
 	policyID := d.Get("policy_id").(string)
 
-	return resource.Retry(d.Timeout(schema.TimeoutUpdate), resourceElasticsearchOpenDistroISMPolicyMappingRetry(indexPattern, policyID, d, m))
+	return resource.RetryContext(context.TODO(), d.Timeout(schema.TimeoutUpdate), resourceElasticsearchOpenDistroISMPolicyMappingRetry(indexPattern, policyID, d, m))
 }
 
 func resourceElasticsearchOpenDistroISMPolicyMappingDelete(d *schema.ResourceData, m interface{}) error {
