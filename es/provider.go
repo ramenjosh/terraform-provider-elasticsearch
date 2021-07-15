@@ -19,10 +19,12 @@ import (
 	awssigv4 "github.com/aws/aws-sdk-go/aws/signer/v4"
 	awssts "github.com/aws/aws-sdk-go/service/sts"
 	"github.com/deoxxa/aws_signing_client"
+
 	"github.com/hashicorp/terraform-plugin-sdk/helper/pathorcontents"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/terraform"
 	elastic7 "github.com/olivere/elastic/v7"
+
 	elastic5 "gopkg.in/olivere/elastic.v5"
 	elastic6 "gopkg.in/olivere/elastic.v6"
 )
@@ -51,6 +53,7 @@ type ProviderConf struct {
 	certPemPath        string
 	keyPemPath         string
 	kibanaUrl          string
+	hostOverride       string
 }
 
 func Provider() terraform.ResourceProvider {
@@ -178,6 +181,12 @@ func Provider() terraform.ResourceProvider {
 				Default:     "",
 				Description: "ElasticSearch Version",
 			},
+			"host_override": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Default:     "",
+				Description: "Override for the 'Host'. Useful when proxying requests via a tunnel.",
+			},
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
@@ -250,6 +259,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 		awsProfile:         d.Get("aws_profile").(string),
 		certPemPath:        d.Get("client_cert_path").(string),
 		keyPemPath:         d.Get("client_key_path").(string),
+		hostOverride:       d.Get("host_override").(string),
 	}, nil
 }
 
@@ -286,6 +296,7 @@ func getClient(conf *ProviderConf) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("[INFO] client: %+v", client)
 	relevantClient = client
 
 	// Use the v7 client to ping the cluster to determine the version if one was not provided
@@ -411,7 +422,7 @@ func getKibanaClient(conf *ProviderConf) (interface{}, error) {
 			opts = append(opts, elastic7.SetHttpClient(tokenHttpClient(conf.token, conf.tokenName, conf.insecure, headers)), elastic7.SetSniff(false))
 		} else {
 			client := http.DefaultClient
-			rt := WithHeader(client.Transport)
+			rt := WithHeader(client.Transport, conf.hostOverride)
 			for k, v := range headers {
 				rt.Set(k, v)
 			}
@@ -473,6 +484,7 @@ func awsSession(region string, conf *ProviderConf) *awssession.Session {
 		sessOpts.Config.Credentials = assumeRoleCredentials(region, conf.awsAssumeRoleArn, conf.awsProfile)
 	} else if conf.awsProfile != "" {
 		sessOpts.Profile = conf.awsProfile
+		sessOpts.SharedConfigState = awssession.SharedConfigEnable
 	}
 
 	// If configured as insecure, turn off SSL verification
@@ -481,22 +493,34 @@ func awsSession(region string, conf *ProviderConf) *awssession.Session {
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}}
 		sessOpts.Config.HTTPClient = client
+	} else if conf.hostOverride != "" {
+		// If we have an override for the host, a safer alternative is to set the server name.
+		client := &http.Client{Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{ServerName: conf.hostOverride},
+		}}
+		sessOpts.Config.HTTPClient = client
 	}
 
 	return awssession.Must(awssession.NewSessionWithOptions(sessOpts))
 }
 
 func awsHttpClient(region string, conf *ProviderConf, headers map[string]string) *http.Client {
-	signer := awssigv4.NewSigner(awsSession(region, conf).Config.Credentials)
-	client, err := aws_signing_client.New(signer, nil, "es", region)
+	session := awsSession(region, conf)
+	log.Printf("[INFO] credentials: %+v", session.Config.Credentials)
+	signer := awssigv4.NewSigner(session.Config.Credentials)
+	log.Printf("[INFO] signer: %+v", signer)
+	client, err := aws_signing_client.New(signer, session.Config.HTTPClient, "es", region)
+	aws_signing_client.SetDebugLog(log.Default())
+	log.Printf("[INFO] client: %+v", client)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	rt := WithHeader(client.Transport)
+	rt := WithHeader(client.Transport, conf.hostOverride)
 	for k, v := range headers {
 		rt.Set(k, v)
 	}
+	log.Printf("[INFO] rt: %+v", rt)
 	client.Transport = rt
 
 	return client
@@ -505,7 +529,7 @@ func awsHttpClient(region string, conf *ProviderConf, headers map[string]string)
 func tokenHttpClient(token string, tokenName string, insecure bool, headers map[string]string) *http.Client {
 	client := http.DefaultClient
 
-	rt := WithHeader(client.Transport)
+	rt := WithHeader(client.Transport, "")
 	rt.Set("Authorization", fmt.Sprintf("%s %s", tokenName, token))
 	for k, v := range headers {
 		rt.Set(k, v)
@@ -554,7 +578,7 @@ func tlsHttpClient(conf *ProviderConf, headers map[string]string) *http.Client {
 
 	transport := &http.Transport{TLSClientConfig: tlsConfig}
 
-	rt := WithHeader(transport)
+	rt := WithHeader(transport, conf.hostOverride)
 	for k, v := range headers {
 		rt.Set(k, v)
 	}

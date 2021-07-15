@@ -458,16 +458,20 @@ func resourceElasticsearchIndexCreate(d *schema.ResourceData, meta interface{}) 
 	// if date math is used, we need to pass the resolved name along to the read
 	// so we can pull the right result from the response
 	var resolvedName string
+	log.Printf("[INFO] settings: %+v", settings)
 
 	// Note: the CreateIndex call handles URL encoding under the hood to handle
 	// non-URL friendly characters and functionality like date math
 	esClient, err := getClient(meta.(*ProviderConf))
+	log.Printf("[INFO] error getting client: %+v", err)
 	if err != nil {
 		return err
 	}
 	switch client := esClient.(type) {
 	case *elastic7.Client:
 		resp, requestErr := client.CreateIndex(name).BodyJson(body).Do(ctx)
+		log.Printf("[INFO] resp: %+v", resp)
+		log.Printf("[INFO] requestErr: %+v", requestErr)
 		err = requestErr
 		if err == nil {
 			resolvedName = resp.Index
